@@ -167,15 +167,23 @@ def fetch_plate(session: requests.Session, plate: str, start: str, end: str) -> 
 
 
 def parse_pdf(content: bytes) -> str:
-    """把 PDF 字节流解析成纯文本。pymupdf 解析失败时返回空串（不中断流程）。"""
+    """把 PDF 字节流解析成纯文本。解析失败返回空串（不中断流程）。
+
+    ⚠️ 已知边界：部分公告 PDF 是**扫描件**（无文本层），get_text() 返回空串。
+    实测这类文件主要是中介机构出具的法律意见书 / 审计报告（体积通常很大）。
+    解析不出来的条目不写入正文，但元数据照常入库，后续可在评测阶段单独归因。
+    """
     try:
-        import fitz  # PyMuPDF
+        import pymupdf
     except ImportError:
-        print("[错误] 未安装 pymupdf，请先 pip install pymupdf")
-        return ""
+        try:
+            import fitz as pymupdf  # PyMuPDF 旧模块名，向后兼容
+        except ImportError:
+            print("[错误] 未安装 pymupdf，请先 pip install pymupdf")
+            return ""
 
     try:
-        with fitz.open(stream=content, filetype="pdf") as doc:
+        with pymupdf.open(stream=content, filetype="pdf") as doc:
             text = "\n".join(page.get_text() for page in doc)
     except Exception as exc:  # noqa: BLE001
         print(f"    [PDF解析失败] {type(exc).__name__}: {exc}")
