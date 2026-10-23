@@ -61,6 +61,19 @@ def _jaccard(a: str, b: str) -> float:
     return len(sa & sb) / len(sa | sb)
 
 
+def _has_long_copy(text: str, source: str, n: int = 40) -> bool:
+    """检查 text 中是否存在长度 >= n 的连续片段直接抄自 source。
+
+    用于识别「建议口径只是把公告原文抄了一遍」——那没有完成对外转述这一步。
+    """
+    if not text or not source or len(text) < n:
+        return False
+    for i in range(len(text) - n + 1):
+        if text[i:i + n] in source:
+            return True
+    return False
+
+
 def _amount_in_source(amount: dict | None, content: str) -> bool | None:
     """抽取出的金额能否在原文找到。None 表示无法判断（本来就没金额）。"""
     if not amount:
@@ -166,6 +179,10 @@ def score_result(extracted: dict, interpreted: dict, content: str, title: str) -
     if len(content) > MAX_CHARS_FOR_LLM:
         penalty += 3
         detail.append("[-3] 正文超长已截断，后文条款可能遗漏")
+
+    if stmt and _has_long_copy(stmt, content, 40):
+        penalty += 6
+        detail.append("[-6] 建议口径含 40 字以上原文照搬，未完成对外转述")
 
     total = max(0, s1 + s2 + s3 + s4 - penalty)
     return {

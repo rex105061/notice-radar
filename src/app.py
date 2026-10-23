@@ -140,6 +140,7 @@ def render_analysis(res: dict) -> None:
         cols = st.columns(4)
         for col, (k, v) in zip(cols, dims.items()):
             col.metric(k, f"{v}/25")
+        st.caption("该分数为自动规则检查结果，衡量事实落地与表述安全，不衡量洞察深度。")
         with st.expander("分数怎么来的"):
             for item in sc.get("detail", []):
                 st.markdown(f"- {item}")
