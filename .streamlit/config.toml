@@ -6,9 +6,8 @@ secondaryBackgroundColor = "#F7F8FA"
 textColor = "#1F2328"
 
 [server]
-# 部署到云端时由平台控制端口，这里只做本地默认
+# 本地默认；云端由 Streamlit Cloud 覆盖端口与 CORS 设置
 headless = true
-enableCORS = false
 
 [browser]
 gatherUsageStats = false
