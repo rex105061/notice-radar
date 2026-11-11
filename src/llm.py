@@ -26,18 +26,33 @@ DEFAULT_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 _client = None
 
 
+def _secret(key: str) -> str:
+    """读配置：本地读 .env / 环境变量，云端（Streamlit Cloud）读 st.secrets。"""
+    val = os.getenv(key, "").strip()
+    if val:
+        return val
+    try:
+        import streamlit as st
+
+        return str(st.secrets.get(key, "")).strip()
+    except Exception:  # 非 Streamlit 环境，或 secrets 未配置
+        return ""
+
+
 def get_client() -> OpenAI:
     global _client
     if _client is None:
-        key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+        key = _secret("DEEPSEEK_API_KEY")
         if not key:
             raise RuntimeError(
-                "未找到 DEEPSEEK_API_KEY。请在项目根目录创建 .env，写入：\n"
+                "未找到 DEEPSEEK_API_KEY。本地请在项目根目录 .env 中配置；"
+                "云端请在 Streamlit 的 Secrets 中配置。\n"
                 "DEEPSEEK_API_KEY=sk-xxxx\n"
                 "DEEPSEEK_BASE_URL=https://api.deepseek.com\n"
                 "LLM_MODEL=deepseek-chat"
             )
-        _client = OpenAI(api_key=key, base_url=DEFAULT_BASE_URL, timeout=90)
+        base = _secret("DEEPSEEK_BASE_URL") or DEFAULT_BASE_URL
+        _client = OpenAI(api_key=key, base_url=base, timeout=90)
     return _client
 
 

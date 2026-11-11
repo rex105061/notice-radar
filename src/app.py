@@ -21,7 +21,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from analyze import DDL_ANALYSIS, analyze_notice, save_analysis  # noqa: E402
-from config import DB_PATH  # noqa: E402
+from config import ALLOW_LIVE_ANALYSIS, DB_PATH  # noqa: E402
 
 DISCLAIMER = (
     "**免责声明**：本页内容由 AI 生成，仅供参考，**不构成任何投资建议**。"
@@ -200,7 +200,10 @@ def main() -> None:
             if res:
                 render_analysis(res)
             elif not row.get("content_text"):
-                st.warning("这条公告没有正文（PDF 未抓取或为扫描件），无法生成解读。")
+                st.info("这条公告没有可解析的正文（PDF 未抓取，或原文为扫描件）。")
+            elif not ALLOW_LIVE_ANALYSIS:
+                st.info("演示版只展示已预生成的解读结果，不提供实时调用。"
+                        "如需完整体验，请在本地运行本项目。")
             else:
                 st.caption("尚未生成解读。点击下方按钮，约 5–10 秒。")
                 if st.button("生成 AI 解读", key=f"btn_{aid}"):

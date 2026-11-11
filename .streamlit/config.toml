@@ -1,0 +1,14 @@
+[theme]
+base = "light"
+primaryColor = "#185FA5"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F7F8FA"
+textColor = "#1F2328"
+
+[server]
+# 部署到云端时由平台控制端口，这里只做本地默认
+headless = true
+enableCORS = false
+
+[browser]
+gatherUsageStats = false

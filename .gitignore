@@ -16,6 +16,8 @@ env/
 
 # 本地数据（体积大 / 可重新抓取）
 data/*.db
+# 例外：主库要跟着代码走（约 4MB）。云端部署没有它就打不开页面。
+!data/notices.db
 data/*.sqlite
 data/*.sqlite3
 data/*.pdf
