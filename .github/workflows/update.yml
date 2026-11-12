@@ -1,0 +1,68 @@
+name: 每日更新公告数据
+
+# 为什么用 GitHub Actions：
+# 1. 免费额度 2000 分钟/月，这个任务每次约 8 分钟，绰绰有余
+# 2. 不依赖任何人的电脑开机
+# 3. 抓完自动提交数据库，Streamlit Cloud 检测到仓库变化会自动重新部署
+# 4. 密钥放在仓库 Secrets 里，不进代码
+
+on:
+  schedule:
+    # 每天 18:10（北京时间）= 10:10 UTC
+    # 选 18:10 是因为 A 股公告集中在 15:00–20:00 披露
+    - cron: "10 10 * * *"
+  workflow_dispatch: # 支持手动触发，方便调试
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-notices
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+
+      - name: 抓取公告列表（近 3 天）
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: python src/fetch_notices.py --days 3
+
+      - name: 补抓高价值公告正文
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: python src/fetch_body.py --high-value --limit 60
+
+      - name: 生成解读（每天 30 条，控制成本）
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_BASE_URL: https://api.deepseek.com
+          LLM_MODEL: deepseek-chat
+        run: python src/pipeline.py --limit 30 --skip-done
+
+      - name: 提交数据库
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/notices.db
+          if git diff --staged --quiet; then
+            echo "数据无变化，跳过提交"
+          else
+            git commit -m "chore: 自动更新公告数据 $(date -u +%Y-%m-%d)"
+            git push
+          fi
