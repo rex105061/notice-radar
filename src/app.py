@@ -150,11 +150,14 @@ def render_analysis(res: dict) -> None:
 
 
 def main() -> None:
+    stats = db_stats()
     st.title("公告雷达")
     st.caption("输入股票代码 → 看公告 → 读出「意味着什么、机构会问什么、口径怎么说」")
+    if stats["range"][0]:
+        st.caption(f"当前数据：{stats['range'][0]} 至 {stats['range'][1]}，"
+                   f"共 {stats['total']} 条公告 · 已生成解读 {stats['analyzed']} 条")
     st.warning(DISCLAIMER)
 
-    stats = db_stats()
     with st.sidebar:
         st.markdown("### 数据概况")
         st.metric("公告总数", stats["total"])
@@ -169,8 +172,8 @@ def main() -> None:
 
     c1, c2, c3 = st.columns([2, 1, 1])
     keyword = c1.text_input("股票代码或公司简称", placeholder="例如 300750 或 宁德时代")
-    days = c2.selectbox("时间范围", [3, 7, 14, 30, 90], index=1,
-                        format_func=lambda d: f"近 {d} 天")
+    days = c2.selectbox("时间范围", [0, 3, 7, 14, 30, 90], index=0,
+                        format_func=lambda d: "全部" if d == 0 else f"近 {d} 天")
     high_only = c3.checkbox("只看高价值类型", value=True)
 
     if not keyword:
@@ -179,8 +182,15 @@ def main() -> None:
 
     rows = query_notices(keyword.strip(), days, high_only)
     if not rows:
-        st.warning("没有查到公告。可能是：① 代码/名称不对；② 该时间段内没有公告；"
-                   "③ 数据还没抓取（先跑 fetch_notices.py）。")
+        stat = db_stats()
+        since, until = stat["range"]
+        st.warning(
+            f"没查到公告。当前数据库覆盖 **{since} 至 {until}**，共 {stat['total']} 条公告。\n\n"
+            "可能的原因："
+            "① 该公司在这段时间内确实没有公告；"
+            "② 时间范围选得比数据还窄——先把时间切到「全部」；"
+            "③ 勾了「只看高价值类型」，该公司的公告都被归为会议/制度类；"
+            "④ 代码或名称不对。")
         return
 
     name = rows[0]["sec_name"]
