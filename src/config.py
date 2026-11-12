@@ -18,8 +18,10 @@ PDF_CACHE_DIR.mkdir(exist_ok=True)
 DB_PATH = DATA_DIR / "notices.db"
 
 # 是否允许在网页上实时调用 LLM 分析「尚未分析过」的公告。
-# 公网部署时默认关闭：① 防止陌生人消耗 API 额度 ② 演示时零等待、不会卡住
-ALLOW_LIVE_ANALYSIS = os.getenv("ALLOW_LIVE", "0") == "1"
+# 默认开启但带配额：按需抓正文 + 分析一条，成本约 0.02 元，
+# 配额限制是为了防止陌生人连续刷、把 API 额度耗光。
+ALLOW_LIVE_ANALYSIS = os.getenv("ALLOW_LIVE", "1") == "1"
+LIVE_QUOTA = int(os.getenv("LIVE_QUOTA", "3"))
 
 # --------------------------------------------------------------------------
 # 数据源：巨潮资讯网（深交所指定的法定信息披露平台）

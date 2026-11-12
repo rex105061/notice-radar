@@ -21,7 +21,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from analyze import DDL_ANALYSIS, analyze_notice, save_analysis  # noqa: E402
-from config import ALLOW_LIVE_ANALYSIS, DB_PATH  # noqa: E402
+from config import ALLOW_LIVE_ANALYSIS, CNINFO_STATIC_BASE, DB_PATH, LIVE_QUOTA  # noqa: E402
 
 DISCLAIMER = (
     "**免责声明**：本页内容由 AI 生成，仅供参考，**不构成任何投资建议**。"
@@ -71,6 +71,47 @@ def load_analysis(aid: str) -> dict | None:
         "score": json.loads(row[2] or "{}"),
         "total": row[3],
     }
+
+
+@st.cache_resource
+def _http_session():
+    """复用一个 HTTP 会话（含 cookie），避免每次下载 PDF 都重新握手。"""
+    from fetch_notices import build_session
+
+    return build_session()
+
+
+def ensure_content(row: dict) -> str:
+    """正文缺失时，现场下载 PDF 并解析；成功后写回数据库。
+
+    这是「按需抓取」的核心——库里 1 万条公告不可能全部预抓，
+    但用户真正会看的就是那几条，缺哪条补哪条。
+    """
+    if row.get("content_text"):
+        return row["content_text"]
+    url = row.get("adjunct_url")
+    if not url:
+        return ""
+    try:
+        from fetch_notices import parse_pdf
+
+        resp = _http_session().get(CNINFO_STATIC_BASE + url, timeout=40)
+        resp.raise_for_status()
+        text = parse_pdf(resp.content)
+        if not text:
+            return ""  # 扫描件或无文本层
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            conn.execute(
+                "UPDATE notices SET content_text = ? WHERE announcement_id = ?",
+                (text, row["announcement_id"]))
+            conn.commit()
+        finally:
+            conn.close()
+        row["content_text"] = text
+        return text
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 @st.cache_data(ttl=300)
@@ -209,27 +250,46 @@ def main() -> None:
 
             if res:
                 render_analysis(res)
-            elif not row.get("content_text"):
-                st.info("这条公告没有可解析的正文（PDF 未抓取，或原文为扫描件）。")
-            elif not ALLOW_LIVE_ANALYSIS:
-                st.info("演示版只展示已预生成的解读结果，不提供实时调用。"
-                        "如需完整体验，请在本地运行本项目。")
             else:
-                st.caption("尚未生成解读。点击下方按钮，约 5–10 秒。")
-                if st.button("生成 AI 解读", key=f"btn_{aid}"):
-                    with st.spinner("正在抽取事实并生成解读……"):
-                        try:
-                            result = analyze_notice(row)
-                            save_analysis(result)
-                            st.session_state[f"res_{aid}"] = {
-                                "extracted": result["extracted"],
-                                "interpreted": result["interpreted"],
-                                "score": result["score"],
-                                "total": result["score"]["total"],
-                            }
-                            st.rerun()
-                        except Exception as exc:  # noqa: BLE001
-                            st.error(f"分析失败：{exc}")
+                has_text = bool(row.get("content_text"))
+                if not ALLOW_LIVE_ANALYSIS:
+                    st.info("演示版只展示已预生成的解读结果，不提供实时调用。"
+                            "如需完整体验，请在本地运行本项目。")
+                else:
+                    used = st.session_state.get("live_used", 0)
+                    left = LIVE_QUOTA - used
+                    if left <= 0:
+                        st.info("本会话的实时处理次数已用完（刷新页面可重置）。"
+                                "想看更多，可在本地运行本项目。")
+                    else:
+                        tip = "这条公告的正文还没抓取。" if not has_text else ""
+                        st.caption(f"{tip}点下方按钮现场处理，约 5–10 秒"
+                                   f"（本会话还可 {left} 次）")
+                        label_btn = "获取正文并生成解读" if not has_text else "生成 AI 解读"
+                        if st.button(label_btn, key=f"btn_{aid}"):
+                            with st.spinner("正在获取正文并生成解读……"):
+                                ok = True
+                                if not has_text:
+                                    text = ensure_content(row)
+                                    if not text:
+                                        st.warning("这条 PDF 解析不出文字——多半是扫描件"
+                                                   "（常见于律所意见书、审计报告），"
+                                                   "或链接已失效。")
+                                        ok = False
+                                if ok:
+                                    try:
+                                        result = analyze_notice(row)
+                                        save_analysis(result)
+                                        st.session_state[f"res_{aid}"] = {
+                                            "extracted": result["extracted"],
+                                            "interpreted": result["interpreted"],
+                                            "score": result["score"],
+                                            "total": result["score"]["total"],
+                                        }
+                                        st.session_state["live_used"] = used + 1
+                                        st.rerun()
+                                    except Exception as exc:  # noqa: BLE001
+                                        st.error(f"处理失败：{exc}")
 
 
 if __name__ == "__main__":
