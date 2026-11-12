@@ -36,7 +36,8 @@ def fetch_candidates(code=None, aid=None, limit=None, skip_done=False) -> list:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     sql = ("SELECT n.* FROM notices n "
-           "WHERE n.content_text IS NOT NULL AND n.content_text != ''")
+           "WHERE n.content_text IS NOT NULL AND n.content_text != '' "
+           "AND n.is_high_value = 1")
     params: list = []
     if aid:
         sql += " AND n.announcement_id = ?"

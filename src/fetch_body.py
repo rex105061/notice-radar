@@ -45,8 +45,8 @@ def candidates(code=None, high_value=False, limit=None, top_companies=0) -> list
         if top:
             sql += f" AND sec_code IN ({','.join('?' * len(top))})"
             params += top
-    # 优先抓体积小的（扫描件少、解析成功率高、下载快）
-    sql += " ORDER BY adjunct_size ASC, notice_date DESC"
+    # 先按价值排序，再按体积（小文件多半是电子版、解析成功率高）
+    sql += " ORDER BY is_high_value DESC, adjunct_size ASC, notice_date DESC"
     if limit:
         sql += " LIMIT ?"
         params.append(int(limit))
