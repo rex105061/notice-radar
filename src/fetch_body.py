@@ -18,6 +18,7 @@ import argparse
 import sqlite3
 import sys
 import time
+from datetime import date, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -56,6 +57,25 @@ def candidates(code=None, high_value=False, limit=None, top_companies=0) -> list
     return rows
 
 
+def missing_workdays(conn, days_back: int = 30) -> list:
+    """找出最近 N 天里「一个工作日完全没有数据」的日期。
+
+    增量抓取最容易出的问题不是抓失败，而是**抓出了一段空档自己不知道**——
+    页面上表现成「这家公司怎么没有最近的公告」。
+    """
+    end = date.today()
+    start = end - timedelta(days=days_back)
+    have = {r[0] for r in conn.execute(
+        "SELECT DISTINCT notice_date FROM notices WHERE notice_date >= ?",
+        (start.isoformat(),))}
+    gaps, d = [], start
+    while d <= end:
+        if d.weekday() < 5 and d.isoformat() not in have:  # 只看工作日
+            gaps.append(d.isoformat())
+        d += timedelta(days=1)
+    return gaps
+
+
 def show_stats() -> None:
     conn = sqlite3.connect(DB_PATH)
     total = conn.execute("SELECT COUNT(*) FROM notices").fetchone()[0]
@@ -69,11 +89,19 @@ def show_stats() -> None:
         "SUM(CASE WHEN is_high_value=1 THEN 1 ELSE 0 END) hv "
         "FROM notices GROUP BY sec_code, sec_name "
         "ORDER BY hv DESC, n DESC LIMIT 12").fetchall()
+    gaps = missing_workdays(conn, 30)
     conn.close()
 
     print(f"公告总数：{total}    已有正文：{with_text}    覆盖率："
           f"{with_text / total * 100 if total else 0:.1f}%")
     print(f"日期范围：{rng[0]} ~ {rng[1]}")
+
+    if gaps:
+        print(f"⚠️ 最近 30 天有 {len(gaps)} 个工作日没有数据："
+              f"{', '.join(gaps[:6])}{' …' if len(gaps) > 6 else ''}")
+        print(f"   → 补抓：python src/fetch_notices.py --start {gaps[0]} --end {gaps[-1]}")
+    else:
+        print("✅ 最近 30 天工作日数据连续")
     print(f"\n{'代码':<8}{'简称':<12}{'公告数':>6}{'高价值':>7}")
     for code, name, n, hv in top:
         print(f"{code:<8}{name:<12}{n:>6}{hv:>7}")

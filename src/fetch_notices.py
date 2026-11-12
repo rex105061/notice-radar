@@ -142,6 +142,20 @@ def normalize(item: dict, plate: str) -> dict:
     }
 
 
+def date_range(start: str, end: str):
+    """把日期区间拆成逐天。
+
+    ⚠️ 实测：巨潮接口一次查询跨度过大时（>10 天）会静默截断，
+    只返回最近的一部分，看起来像"抓成功了"，其实中间是空的。
+    按天请求是最稳的做法。
+    """
+    d = datetime.strptime(start, "%Y-%m-%d").date()
+    e = datetime.strptime(end, "%Y-%m-%d").date()
+    while d <= e:
+        yield d.isoformat()
+        d += timedelta(days=1)
+
+
 def fetch_plate(session: requests.Session, plate: str, start: str, end: str) -> list:
     """抓完某一个板块在日期区间内的全部公告。"""
     rows, page = [], 1
@@ -258,10 +272,12 @@ def main() -> int:
 
     session = build_session()
     all_rows = []
-    for plate in PLATES:
-        print(f"\n--- 抓取 {plate} ---")
-        all_rows.extend(fetch_plate(session, plate, start, end))
-        time.sleep(REQUEST_INTERVAL)
+    for day in date_range(start, end):
+        for plate in PLATES:
+            part = fetch_plate(session, plate, day, day)
+            all_rows.extend(part)
+            print(f"  {day} [{plate}] {len(part)} 条")
+            time.sleep(REQUEST_INTERVAL)
 
     # 按公告 ID 去重（同一公告可能被沪/深两个板块同时带出）
     dedup = {r["announcement_id"]: r for r in all_rows if r["announcement_id"]}
