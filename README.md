@@ -145,6 +145,25 @@ python src/fetch_notices.py --days 3
 > 部署后默认是**演示模式**（`ALLOW_LIVE=0`）：只展示已预生成的解读结果，不实时调用模型。
 > 这样既避免陌生人消耗 API 额度，也让页面零等待。需要完整体验时本地运行即可。
 
+### 数据怎么保持最新
+
+不需要手动跑脚本。仓库里配了 GitHub Actions 定时任务（`.github/workflows/update.yml`）：
+
+| 项 | 配置 |
+|---|---|
+| 触发时间 | 每天北京时间 18:10（A 股公告集中在 15:00–20:00 披露） |
+| 每天做的事 | 抓近 3 天公告列表 → 补 60 条高价值正文 → 生成 30 条解读 → 提交数据库 |
+| 结果 | Streamlit Cloud 检测到仓库变化，自动重新部署 |
+| 成本 | GitHub Actions 免费额度 2000 分钟/月，本任务每次约 8 分钟 |
+
+**启用方式（只需一次）**：
+
+1. 仓库 → Settings → Secrets and variables → Actions → **New repository secret**
+2. Name 填 `DEEPSEEK_API_KEY`，Value 填你的 key
+3. 之后每天自动更新。想立刻跑一次，去 **Actions** 页选「每日更新公告数据」→ **Run workflow**
+
+> 密钥只存在 GitHub Secrets 里，不会出现在代码、日志或输出中。
+
 ---
 
 ## 七、项目进度
