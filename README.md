@@ -2,6 +2,9 @@
 
 > A 股公开公告 → LLM 结构化抽取 → 解读与建议口径（含合规风险标记）
 
+**在线演示**：https://notice-radar-jzfkesvjwzcbhabnuw79pt.streamlit.app/
+　演示版每会话可现场处理 3 条公告（含按需抓取正文），更多需本地运行。
+
 ---
 
 ## 一、这个工具解决谁的什么问题
@@ -18,7 +21,6 @@
 人做的事从「**从零起草口径**」变成「**在草稿上判断并签字**」。
 
 ### 它明确做不到什么
-
 
 | 边界 | 说明 |
 |---|---|
@@ -61,28 +63,24 @@
 ## 三、系统架构
 
 ```
-┌─────────────────┐
-│ 巨潮资讯网公开接口 │   A 股公告列表（沪深京全市场）
-└────────┬────────┘
-         │  fetch_notices.py
+┌──────────────────┐
+│ 巨潮资讯网公开接口 │  沪深两市公告列表（逐日抓取）
+└────────┬─────────┘
+         │  fetch_notices.py      按天请求，避免接口跨天静默截断
          ▼
-┌─────────────────┐
-│  SQLite 原始库    │   元数据 + PDF 正文纯文本
-└────────┬────────┘
-         │  extract.py（LLM）
+┌──────────────────┐
+│  SQLite 原始库    │  37,508 条元数据（10/15–11/12）+ 正文纯文本
+└────────┬─────────┘
+         │  fetch_body.py         批量补正文；网页端也可按需单条抓取
          ▼
-┌─────────────────┐
-│  结构化 JSON      │   公司/类型/金额/主体/影响方向/关键条款
-└────────┬────────┘
-         │  interpret.py（LLM）
-         ▼
-┌─────────────────┐
-│  解读 + 口径输出   │   解读 / 机构关注点 / 建议口径 / 合规风险标记
-└────────┬────────┘
+┌──────────────────┐
+│  analyze.py       │  M4 抽取 → M5 解读 → M6 合规判定 → M7 规则评分
+└────────┬─────────┘
          │
-    ┌────┴────┐
-    ▼         ▼
- cli.py    app.py (Streamlit)
+    ┌────┴─────┐
+    ▼          ▼
+ app.py     pipeline.py
+ Streamlit   批量命令行
 ```
 
 ---
@@ -98,10 +96,13 @@ python -m venv .venv
 # source .venv/bin/activate     # macOS / Linux
 
 pip install -r requirements.txt
+cp .env.example .env            # 填入 DEEPSEEK_API_KEY
 
-cp .env.example .env            # 然后填入你的 DEEPSEEK_API_KEY
-
-python src/fetch_notices.py --days 3
+# 仓库已带 37,508 条公告数据，可直接跳到第 4 步
+python src/fetch_notices.py --days 3               # 1. 抓公告列表
+python src/fetch_body.py --high-value --limit 60   # 2. 补抓正文
+python src/pipeline.py --limit 30                  # 3. 生成解读
+streamlit run src/app.py                           # 4. 打开网页
 ```
 
 ---
@@ -121,9 +122,9 @@ python src/fetch_notices.py --days 3
 - **样本量说明**：8 条不足以支撑统计显著性，结论应表述为「在该样本上」而非「准确率为 75%」
 
 > **一个必须说明的发现**：系统内置的「质量分」与人工判断**不相关**。
-> 107 条自动评分的平均值 90.9，其中 58% 落在 90 分、21% 落在 100 分，区分度接近零；
+> 首轮 107 条自动评分的平均值 90.9，其中 58% 落在 90 分、21% 落在 100 分，区分度接近零；
 > 最低分的三条（中标通知书 67、董事辞职 77、董事离任 82）全是**内容极简单**的公告，
-> 说明它衡量的是「公告信息丰度」，而不是「解读质量」。这个维度正在重做。
+> 说明它衡量的是「公告信息丰度」，而不是「解读质量」。这个维度正在重做（见 `eval/badcases.md` 第 006 条）。
 
 ---
 
@@ -142,8 +143,9 @@ python src/fetch_notices.py --days 3
    ```
 5. Deploy
 
-> 部署后默认是**演示模式**（`ALLOW_LIVE=0`）：只展示已预生成的解读结果，不实时调用模型。
-> 这样既避免陌生人消耗 API 额度，也让页面零等待。需要完整体验时本地运行即可。
+> **实时分析配额**：网页端每个会话可现场处理 **3 条**公告（含按需抓取正文），
+> 设配额是为了防止陌生人连续刷、把 API 额度耗光。
+> 想关闭实时功能：在 Secrets 里加 `ALLOW_LIVE = "0"`；想调大额度：加 `LIVE_QUOTA = "10"`。
 
 ### 数据怎么保持最新
 
@@ -169,19 +171,18 @@ python src/fetch_notices.py --days 3
 ## 七、项目进度
 
 - [x] D0 仓库与目录结构
-- [x] D1 公告抓取 + 入库（6893 条元数据 / 210 条正文）
+- [x] D1 公告采集（37,508 条，10/15–11/12 连续无缺口）
 - [x] D2–D3 结构化抽取（schema 定义 + JSON 输出）
 - [x] D4–D5 解读与口径生成（三件套 + 买卖方双视角）
-- [x] D6 CLI 端到端跑通
-- [ ] D7 README 可复现（待他人独立验证）
-- [ ] D8 人工标注评测集（30 条）
-- [x] D9-a 评测规范骨架 + badcase 档案初稿
-- [ ] D9-b 10 个 badcase 归因（进行中）
-- [x] D10 Streamlit 网页（本地可运行）
-- [ ] D11 网页补完（扫描件提示、空态处理）
-- [ ] D12 部署上线 + 演示视频
-- [ ] D13 PRD
-- [ ] D14 公开介绍
+- [x] D6 命令行端到端跑通
+- [x] D7 README 可复现（待第三方独立验证）
+- [x] D8 人工标注评测集（8 条，三个指标已出）
+- [x] D9 评测规范 + badcase 档案（6 类根因）
+- [x] D10–D11 Streamlit 网页
+- [x] D12 部署上线（公网可访问）
+- [x] D13 PRD
+- [ ] D14 公开介绍帖
+- [x] 附加：GitHub Actions 每日自动更新数据
 
 ---
 
@@ -189,14 +190,29 @@ python src/fetch_notices.py --days 3
 
 ```
 notice-radar/
-├── src/                    核心代码
-│   ├── config.py           配置与常量
-│   ├── fetch_notices.py    D1 公告抓取 + 入库
-│   ├── extract.py          D2-D3 结构化抽取（待建）
-│   ├── interpret.py        D4-D5 解读与口径生成（待建）
-│   └── cli.py              D6 命令行入口（待建）
-├── docs/                   文档（PRD、评测规范）
-├── eval/                   评测集与标注表
-├── data/                   本地数据（不入库）
+├── src/
+│   ├── config.py           配置、公告分类规则、合规红线
+│   ├── prompts.py          抽取与解读的 prompt 模板
+│   ├── llm.py              DeepSeek 客户端（JSON 输出 + 重试）
+│   ├── fetch_notices.py    公告列表抓取（按天请求）
+│   ├── fetch_body.py       正文补抓（批量 / 按需）
+│   ├── reclassify.py       改分类规则后重跑
+│   ├── analyze.py          抽取 → 解读 → 评分 → 落库
+│   ├── pipeline.py         批量分析入口
+│   ├── export_eval.py      导出人工标注表
+│   ├── score_eval.py       解析标注表、计算评测指标
+│   └── app.py              Streamlit 网页
+├── docs/
+│   ├── 00_项目说明.md
+│   ├── 01_PRD.md
+│   └── 02_评测规范.md
+├── eval/
+│   ├── 标注表_D8_20261023.md
+│   ├── 评测结果_D8.md
+│   └── badcases.md
+├── data/
+│   └── notices.db          公告库（随仓库，约 15MB）
+├── .github/workflows/
+│   └── update.yml          每日自动更新
 └── requirements.txt
 ```
