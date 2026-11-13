@@ -133,10 +133,32 @@ def db_stats() -> dict:
 
 
 # ------------------------------------------------------------------ 渲染
+def render_priority(pri: dict) -> None:
+    """优先级是这一页的行动入口——先告诉人「要不要现在处理」，再谈内容。"""
+    level = str(pri.get("level", "P2")).upper()
+    label = {"P0": "今日必处理", "P1": "三日内准备", "P2": "存档即可"}.get(level, "")
+    lines = [f"**{level} · {label}**"]
+    if pri.get("reason"):
+        lines.append(f"依据：{pri['reason']}")
+    if pri.get("action"):
+        lines.append(f"建议：{pri['action']}")
+    if pri.get("window"):
+        lines.append(f"窗口：{pri['window']}")
+    block = "  \n".join(lines)
+    if level == "P0":
+        st.error(block)
+    elif level == "P1":
+        st.warning(block)
+    else:
+        st.info(block)
+
+
 def render_analysis(res: dict) -> None:
     it = res["interpreted"]
     ex = res["extracted"]
-    sc = res.get("score") or {}
+
+    if it.get("priority"):
+        render_priority(it["priority"])
 
     st.markdown("**一句话解读**")
     st.info(it.get("one_line") or "（缺失）")
@@ -174,17 +196,6 @@ def render_analysis(res: dict) -> None:
 
     if it.get("compliance_note"):
         st.caption(it["compliance_note"])
-
-    if sc:
-        dims = sc.get("dimensions", {})
-        st.markdown(f"**系统质量分　{sc.get('total', res.get('total'))}/100**")
-        cols = st.columns(4)
-        for col, (k, v) in zip(cols, dims.items()):
-            col.metric(k, f"{v}/25")
-        st.caption("该分数为自动规则检查结果，衡量事实落地与表述安全，不衡量洞察深度。")
-        with st.expander("分数怎么来的"):
-            for item in sc.get("detail", []):
-                st.markdown(f"- {item}")
 
     with st.expander("结构化抽取结果"):
         st.json(ex)

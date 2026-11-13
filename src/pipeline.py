@@ -86,6 +86,16 @@ def print_result(row: dict, result: dict) -> None:
     print(f"【公告】{row['title']}")
     print(line)
 
+    pri = it.get("priority") or {}
+    if pri:
+        label = {"P0": "今日必处理", "P1": "三日内准备", "P2": "存档即可"}.get(
+            pri.get("level"), "")
+        print(f"\n▍优先级  {pri.get('level', '')} · {label}")
+        if pri.get("reason"):
+            print(f"   依据：{pri['reason']}")
+        if pri.get("action"):
+            print(f"   建议：{pri['action']}")
+
     print(f"\n▍一句话解读\n  {it.get('one_line', '（缺失）')}")
 
     print("\n▍机构可能关注点")
@@ -114,11 +124,9 @@ def print_result(row: dict, result: dict) -> None:
         print(f"  提示：{it['compliance_note']}")
 
     d = sc["dimensions"]
-    print(f"\n▍系统质量分  {sc['total']}/100")
+    print(f"\n▍内部校验（不对外展示）  {sc['total']}/100")
     print(f"   事实落地 {d['事实落地']}/25 | 数字一致 {d['数字一致']}/25 | "
           f"合规安全 {d['合规安全']}/25 | 输出完整 {d['输出完整']}/25")
-    for item in sc["detail"]:
-        print(f"   · {item}")
 
     print(f"\n▍结构化抽取\n  {json.dumps(ex, ensure_ascii=False, indent=2)[:800]}")
 

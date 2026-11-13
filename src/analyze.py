@@ -99,6 +99,52 @@ def _hit_rules(text: str) -> list:
     return hits
 
 
+# ------------------------------------------------------------------ 优先级
+LEVEL_ORDER = {"P0": 0, "P1": 1, "P2": 2}
+
+P0_KEYWORDS = ("行政处罚", "立案调查", "退市风险", "终止上市", "暂停上市",
+               "业绩预告修正", "业绩快报修正", "实际控制人变更", "控股股东变更",
+               "重大资产重组", "收购报告书", "重大诉讼")
+
+P1_CATEGORIES = {"重大合同与订单", "股权变动", "利润分配", "融资事项",
+                 "关联交易与担保", "并购重组", "业绩与定期报告"}
+
+
+def rule_priority(category: str, title: str) -> tuple:
+    """规则兜底：模型判轻了，规则把它拉回来。
+
+    模型容易把「日常担保」和「行政处罚」都当成"一份公告"，
+    但这两件事对 IR 的紧迫性差好几个量级。所以最终级别取两者中更严重的。
+    """
+    t = title or ""
+    if any(k in t for k in P0_KEYWORDS):
+        return "P0", "标题命中 P0 关键词"
+    if category == "风险事项":
+        return "P0", "风险事项类公告"
+    if category in P1_CATEGORIES:
+        return "P1", "影响估值或预期，但无即时时效"
+    return "P2", "程序性 / 日常事项"
+
+
+def merge_priority(model_pri, category: str, title: str) -> dict:
+    rule_level, rule_reason = rule_priority(category, title)
+    pri = dict(model_pri or {})
+    raw = str(pri.get("level", "")).strip().upper()
+    model_level = raw if raw in LEVEL_ORDER else rule_level
+
+    final = (model_level
+             if LEVEL_ORDER[model_level] <= LEVEL_ORDER[rule_level]
+             else rule_level)
+    pri["level"] = final
+    if final != model_level and not pri.get("reason"):
+        # 只在模型没给理由时才补一句；模型给了具体理由就保留，不把内部规则说明拼进去
+        pri["reason"] = rule_reason
+    pri.setdefault("window", {"P0": "今日", "P1": "3 个交易日内", "P2": "无时效"}[final])
+    pri.setdefault("action", "")
+    pri.setdefault("reason", rule_reason)
+    return pri
+
+
 # ------------------------------------------------------------------ 评分
 def score_result(extracted: dict, interpreted: dict, content: str, title: str) -> dict:
     """四维规则评分，满分 100。每个扣分项都记录原因，保证可解释。"""
@@ -227,6 +273,10 @@ def analyze_notice(row: dict) -> dict:
         temperature=0.3,
         max_tokens=3000,
     )
+
+    # 优先级：模型判定 + 规则兜底，取更严重者
+    interpreted["priority"] = merge_priority(
+        interpreted.get("priority"), row.get("category", ""), row.get("title", ""))
 
     score = score_result(extracted, interpreted, content, row.get("title", ""))
 
