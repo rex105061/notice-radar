@@ -30,7 +30,7 @@ def picked_option(line: str) -> str | None:
     """从一行里找出被勾选（标了 x）的那个选项。兼容 [x] / [ x] / [x ] 三种写法。"""
     # 选项之间用全角空格（U+3000）分隔；半角连续空格也兼容
     for seg in re.split(r"\u3000+| {2,}", line):
-        if re.search(r"\[(\s*x\s*)\]", seg):
+        if re.search(r"\[(\s*[xX]\s*)\]", seg):
             tail = seg.split("`")[-1].strip().lstrip("`").strip()
             for opt in ("部分准确", "可直接用", "改后可用", "不能用", "准确", "错误", "无", "有"):
                 if tail.startswith(opt):
